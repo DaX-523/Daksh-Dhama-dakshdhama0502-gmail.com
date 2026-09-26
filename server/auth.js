@@ -47,36 +47,45 @@ export function issueAccessToken({ userId, orgId, role, permVersion }, secret) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// TODO — yours to implement.
-//
-// Verify an access token and return its claims, or throw `unauthenticated(...)`.
-// The signing half above is done for you; the verifying half is the exercise.
-//
-// It must reject ALL of the following, each with a 401 UNAUTHENTICATED:
-//
-//   1. a token that is not three dot-separated segments
-//   2. a header or payload that is not valid base64url-encoded JSON
-//   3. a header whose `alg` is anything other than 'HS256', or whose `typ` is not 'JWT'
-//      -- read the header, do NOT trust it. This is the `alg: none` and
-//         algorithm-substitution defence. The constants ALG, ISS and AUD are above.
-//   4. a signature that does not match, compared in constant time
-//   5. an `exp` that is missing, not a number, or <= now (note: <=, not <)
-//   6. an `iss` or `aud` that is not ours
-//   7. a missing or empty `jti`
-//
-// On success, return the decoded claims object.
-//
-// AUTH-DATA-MODEL.md §10 lists the failure modes; §2 defines the claim set.
-// `node scripts/check-jwt.js` is the public test suite for this function.
-// ---------------------------------------------------------------------------
+const SEGMENT = /^[A-Za-z0-9_-]+$/;
+
+function decodeSegment(segment) {
+  let value;
+  try {
+    value = JSON.parse(unb64(segment).toString('utf8'));
+  } catch {
+    throw unauthenticated('malformed token');
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw unauthenticated('malformed token');
+  }
+  return value;
+}
+
+// The header is only checked against what we issue. The algorithm is never taken from it.
 export function verifyAccessToken(token, secret) {
-  // YOURS TO WRITE. Every failure mode listed above must be a 401 UNAUTHENTICATED.
-  // `node scripts/check-jwt.js` is the public suite for this function.
-  throw Object.assign(
-    new Error('TODO: server/auth.js — verifyAccessToken() is yours to write (AUTH-DATA-MODEL.md §10).'),
-    { code: 'NOT_IMPLEMENTED' }
-  );
+  const parts = typeof token === 'string' ? token.split('.') : [];
+  if (parts.length !== 3 || !parts.every((part) => SEGMENT.test(part))) {
+    throw unauthenticated('malformed token');
+  }
+  const [h, p, s] = parts;
+
+  const header = decodeSegment(h);
+  if (header.alg !== ALG || header.typ !== 'JWT') throw unauthenticated('unsupported token type');
+
+  const expected = Buffer.from(b64(createHmac('sha256', secret).update(`${h}.${p}`).digest()));
+  const given = Buffer.from(s);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    throw unauthenticated('invalid token signature');
+  }
+
+  const claims = decodeSegment(p);
+  if (typeof claims.exp !== 'number' || claims.exp <= Math.floor(Date.now() / 1000)) {
+    throw unauthenticated('token expired');
+  }
+  if (claims.iss !== ISS || claims.aud !== AUD) throw unauthenticated('token not issued for this api');
+  if (typeof claims.jti !== 'string' || claims.jti === '') throw unauthenticated('token has no id');
+  return claims;
 }
 
 
