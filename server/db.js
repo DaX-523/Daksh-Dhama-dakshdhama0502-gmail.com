@@ -21,6 +21,17 @@ export function openDatabase(file = process.env.DATABASE_FILE ?? 'app.db') {
 // order and plain string comparison works in SQL. Matches the schema defaults.
 export const nowIso = () => new Date().toISOString();
 
+// Prepared statements are cached per connection and per SQL text, so callers can write
+// the query inline without re-preparing it on every request.
+const statements = new WeakMap();
+export function sql(db, text) {
+  let byText = statements.get(db);
+  if (!byText) statements.set(db, (byText = new Map()));
+  let stmt = byText.get(text);
+  if (!stmt) byText.set(text, (stmt = db.prepare(text)));
+  return stmt;
+}
+
 export function newId(prefix) {
   const rand = crypto.randomUUID().replaceAll('-', '').slice(0, 16);
   return `${prefix}_${rand}`;
