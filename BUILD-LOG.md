@@ -9,30 +9,45 @@ The categories we look for are listed in `DISCOVERY-BRIEF.md`. The example below
 *shape* of a good entry; it is a recreation of something already printed in `README.md`, so it
 gives nothing away.
 
----
-
-<!-- EXAMPLE — delete this block, keep the shape.
-
-## 2026-03-04 · Phase 0 — orientation
-
-Expected the unknown-permission test to fail on my validation code.
-Observed: it passed, with foreign_keys ON, and *also* passed with the pragma removed — so the
-check was never running, and the "pass" was the schema loading fine while enforcing nothing.
-Changed: moved `foreign_keys = ON` to connection open and re-ran; now it raises
-`FOREIGN KEY constraint failed` as the README said it would.
-Note: this is the failure mode where a passing test is worse than a failing one.
-
--->
 
 ## Phase 0 — orientation
 
-_Installed, reset the database, read the documents, ran the suites against the untouched skeleton.
-What did the starting line actually look like, and which failure surprised you?_
+**2026-09-26**
+
+Set up the repo: moved `starter/` to the root so `BUILD-LOG.md` and `DECISIONS.md` sit at the
+root. Deleted `q1-starter/`, `tools/`, `DISCOVERY-RUBRIC.md` and `HARDENING.md`. Specs moved to `docs/`.
+
+
+`.nvmrc` wants Node 22, I'm on 20.17. Install and all suites ran fine, so staying on 20.
+
+Starting line on the untouched skeleton:
+- `check-jwt.js`: 0 passed, 43 failed. Every case fails with the stub's TODO error, not a 401,
+  so a verifier that just throws on everything can't pass by accident.
+- `check-api.js`: the first request, "dana logs in", gets a 404 and the run aborts. There is no
+  `/v1/auth/login` at all. The README's list of routes to write doesn't mention auth.
+- `check-permissions.js` and `npm run personalisation` both die on the `resolve()` stub.
+- Playwright not run yet, it needs a console first.
+
+The database has a role (`reviewer`) and a permission (`device:reboot`) that aren't in any
+doc. They're there to catch code that copies the docs' role table. Grading uses different
+ones, so my code reads roles and permissions from the database instead of a list I type in.
+
+
 
 ## Phase 1 — token verification
 
-_What did you expect each failure mode to look like before you ran it? Which one behaved
-differently from your expectation, and what did that tell you?_
+**2026-09-26**
+
+Implemented `verifyAccessToken` in `server/auth.js`. `check-jwt.js` went from 0/43 to 43/43.
+
+Node doesn't reject bad base64: decoding garbage like `!!!not-base64!!!` just returns some
+bytes instead of an error. So each part of the token is checked for allowed characters first.
+
+The signature is compared as text, not as decoded bytes, because a few different strings
+decode to the same bytes and would all pass.
+
+Lengths are checked first, because it crashes on different lengths and a
+cut-off signature would give a 500 instead of a 401.
 
 ## Phase 2 — caller context and the resolution engine
 
