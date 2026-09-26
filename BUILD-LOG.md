@@ -80,8 +80,34 @@ newer token from the same sign-in, so the person has to log in again.
 
 ## Phase 3 — orgs, members, invites
 
-_Anything you had to work out that no document states. Invite lifecycle states are a common
-source of this._
+**2026-09-26**
+
+Wrote orgs, members and invites, plus `lifecycle.js` (who can change whom, last owner,
+ending sessions) and `audit.js`.
+
+An expired invite still blocked a new invite for the same email. The database rule "one
+live invite per email" only looks at accepted/cancelled, not at the expiry date. So before
+creating an invite I close any expired one for that email. Tested by moving an invite's
+expiry into the past and re-inviting: 201. Side effect: the old invite now shows as
+"revoked" in the list, not "expired".
+
+The docs say an existing user who accepts an invite gets "attached". Taken literally,
+anyone holding the link would be logged in as that person. So an existing account has to
+type its own password to accept. Tested: wrong password 401, right password joins.
+
+Removing someone now also revokes their grants in that org. Without that, re-inviting them
+brings their old extra permissions back. Tested: gave a member an audit:read grant, removed
+them, re-invited them: audit:read is deny.
+
+Owners can change other owners (check-api expects Dana to demote the other Acme owner),
+but everyone else can only change roles below their own. So "equal role is 403" is about
+admins, not owners.
+
+Last-owner check only counts active owners. A suspended owner can't run the org. I also
+block suspending the last owner, which the docs don't mention.
+
+Sam suspended in Acme can still log in: she lands in Globex, her first active org. Asking
+for Acme explicitly gives 403 suspended.
 
 ## Phase 4 — devices and grants
 
