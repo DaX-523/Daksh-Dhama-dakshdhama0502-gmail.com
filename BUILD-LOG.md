@@ -51,8 +51,32 @@ cut-off signature would give a 500 instead of a 401.
 
 ## Phase 2 — caller context and the resolution engine
 
-_This is where most people's first model is wrong. Write down the model you started with, the
-observation that broke it, and the model you moved to. Be specific about the observation._
+**2026-09-26**
+
+Wrote the permission engine (`server/permissions.js`), the request context
+(`server/context.js`) and the auth routes (login, refresh, logout, switch org, me).
+`check-permissions.js` 35/35, personalisation 18/18.
+
+How a permission gets decided: not an active member means everything is denied. Otherwise
+a deny grant wins, then the role's list, then an allow grant, else it's an "implicit" deny.
+The role's list and the grants are read from the database on every request.
+
+NOTE: Dana is only a viewer in Globex, but her org-level `device:control` came
+back allow, from her grant on globex-desk-01. Org level means "allowed on at least one
+device". The row for globex-kiosk-02 still says deny.
+
+A test passing for the wrong reason: "Acme token against Globex -> 404" already passes,
+but only because the devices route doesn't exist yet and everything is a 404. It proves
+nothing until the route is there.
+
+The docs don't say what switching to an org you're not in should return. I return 404 as
+you can't see orgs you don't belong to and 403 if you're a member but suspended.
+
+Suspended members get 403 on every route, even ones with no permission check like
+creating an org. Only switching to another org still works.
+
+Refresh tokens work once. Tested re-using an old one: it fails, and it also kills the
+newer token from the same sign-in, so the person has to log in again.
 
 ## Phase 3 — orgs, members, invites
 
