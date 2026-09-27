@@ -9,10 +9,10 @@ import { requireName, requireInt } from '../validate.js';
 
 export const THEMES = ['cobalt', 'amber', 'moss', 'plum', 'rust', 'teal'];
 
-const orgView = (o) => ({ id: o.id, name: o.name, theme: o.theme, maxSessionMinutes: o.max_session_minutes });
+const orgView = (o) => ({ id: o.id, name: o.name, theme: o.theme, max_session_minutes: o.max_session_minutes });
 
 const memberView = (m) => ({
-  userId: m.user_id, email: m.email, name: m.name, role: m.role, status: m.status, joinedAt: m.joined_at,
+  user_id: m.user_id, email: m.email, name: m.name, role: m.role, status: m.status, joined_at: m.joined_at,
 });
 
 function requireTheme(theme) {
@@ -94,46 +94,46 @@ export function registerOrgRoutes(router, { db }) {
   });
 
   router.patch('/v1/orgs/:org', (ctx, params, res) => {
-    const org = auditDenials(db, ctx, { action: 'org.update', targetType: 'org', targetId: params.org }, () => {
+    const org = auditDenials(db, ctx, { action: 'org.update', targetType: 'org', targetId: ctx.orgId }, () => {
       assertCan(db, ctx, 'org:update');
       const { name, theme, maxSessionMinutes } = ctx.body;
       if (name === undefined && theme === undefined && maxSessionMinutes === undefined) {
         throw badRequest('nothing to update: send name, theme or maxSessionMinutes');
       }
-      const current = sql(db, 'SELECT * FROM organizations WHERE id = ?').get(params.org);
+      const current = sql(db, 'SELECT * FROM organizations WHERE id = ?').get(ctx.orgId);
       const next = {
         name: name === undefined ? current.name : requireName(name, 'name'),
         theme: theme === undefined ? current.theme : requireTheme(theme),
         minutes: maxSessionMinutes === undefined ? current.max_session_minutes : requireInt(maxSessionMinutes, 'maxSessionMinutes', { min: 1, max: 1440 }),
       };
       return db.transaction(() => {
-        if (name !== undefined) assertNameFree(db, ctx.userId, next.name, params.org);
+        if (name !== undefined) assertNameFree(db, ctx.userId, next.name, ctx.orgId);
         sql(db, 'UPDATE organizations SET name = ?, theme = ?, max_session_minutes = ? WHERE id = ?')
-          .run(next.name, next.theme, next.minutes, params.org);
-        auditAllow(db, ctx, { action: 'org.update', targetType: 'org', targetId: params.org });
-        return sql(db, 'SELECT * FROM organizations WHERE id = ?').get(params.org);
+          .run(next.name, next.theme, next.minutes, ctx.orgId);
+        auditAllow(db, ctx, { action: 'org.update', targetType: 'org', targetId: ctx.orgId });
+        return sql(db, 'SELECT * FROM organizations WHERE id = ?').get(ctx.orgId);
       })();
     });
     send(res, 200, orgView(org));
   });
 
   router.delete('/v1/orgs/:org', (ctx, params, res) => {
-    auditDenials(db, ctx, { action: 'org.delete', targetType: 'org', targetId: params.org }, () => {
+    auditDenials(db, ctx, { action: 'org.delete', targetType: 'org', targetId: ctx.orgId }, () => {
       assertCan(db, ctx, 'org:delete');
       db.transaction(() => {
         const now = nowIso();
-        sql(db, 'UPDATE organizations SET deleted_at = ? WHERE id = ?').run(now, params.org);
-        endActiveSessions(db, { orgId: params.org, reason: 'membership_removed' });
+        sql(db, 'UPDATE organizations SET deleted_at = ? WHERE id = ?').run(now, ctx.orgId);
+        endActiveSessions(db, { orgId: ctx.orgId, reason: 'membership_removed' });
         sql(db, 'UPDATE invites SET revoked_at = ? WHERE org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL')
-          .run(now, params.org);
-        auditAllow(db, ctx, { action: 'org.delete', targetType: 'org', targetId: params.org });
+          .run(now, ctx.orgId);
+        auditAllow(db, ctx, { action: 'org.delete', targetType: 'org', targetId: ctx.orgId });
       })();
     });
     send(res, 204);
   });
 
   router.get('/v1/orgs/:org/members', (ctx, params, res) => {
-    auditDenials(db, ctx, { action: 'member.list', targetType: 'org', targetId: params.org }, () =>
+    auditDenials(db, ctx, { action: 'member.list', targetType: 'org', targetId: ctx.orgId }, () =>
       assertCan(db, ctx, 'user:read')
     );
     const members = sql(
@@ -141,7 +141,7 @@ export function registerOrgRoutes(router, { db }) {
       `SELECT m.*, u.email, u.name FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.org_id = ? AND m.status IN ('active', 'suspended')
         ORDER BY u.name, u.id`
-    ).all(params.org);
+    ).all(ctx.orgId);
     send(res, 200, { members: members.map(memberView) });
   });
 
@@ -238,6 +238,6 @@ export function registerOrgRoutes(router, { db }) {
       }
       return resolve(db, { userId: params.userId, orgId: ctx.orgId, deviceId });
     });
-    send(res, 200, { userId: params.userId, deviceId, role: result.role, permissions: result.permissions });
+    send(res, 200, { user_id: params.userId, device_id: deviceId, role: result.role, permissions: result.permissions });
   });
 }

@@ -17,7 +17,7 @@ function statusOf(invite, now) {
 
 const inviteView = (i, now) => ({
   id: i.id, email: i.email, role: i.role, status: statusOf(i, now),
-  expiresAt: i.expires_at, createdAt: i.created_at, invitedBy: i.invited_by,
+  expires_at: i.expires_at, created_at: i.created_at, invited_by: i.invited_by,
 });
 
 // The raw token is only ever hashed and compared. It is never stored, logged or echoed back.
@@ -53,7 +53,7 @@ export function registerInviteRoutes(router, { db, secret }) {
           db,
           `SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
             WHERE m.org_id = ? AND u.email = ? AND m.status IN ('active', 'suspended')`
-        ).get(params.org, email);
+        ).get(ctx.orgId, email);
         if (member) throw conflict('that person is already a member of this organization');
 
         // The live-invite index knows nothing about time, so an expired invite would block a new
@@ -62,14 +62,14 @@ export function registerInviteRoutes(router, { db, secret }) {
           db,
           `UPDATE invites SET revoked_at = ?
             WHERE org_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at <= ?`
-        ).run(now, params.org, email, now);
+        ).run(now, ctx.orgId, email, now);
 
         try {
           sql(
             db,
             `INSERT INTO invites (id, org_id, email, role, token_hash, invited_by, expires_at, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-          ).run(id, params.org, email, ctx.body.role, hashInviteToken(raw), ctx.userId, expiresAt, now);
+          ).run(id, ctx.orgId, email, ctx.body.role, hashInviteToken(raw), ctx.userId, expiresAt, now);
         } catch (err) {
           if (isUniqueViolation(err)) throw conflict('a pending invite already exists for that email');
           throw err;
@@ -83,11 +83,11 @@ export function registerInviteRoutes(router, { db, secret }) {
   });
 
   router.get('/v1/orgs/:org/invites', (ctx, params, res) => {
-    auditDenials(db, ctx, { action: 'invite.list', targetType: 'org', targetId: params.org }, () =>
+    auditDenials(db, ctx, { action: 'invite.list', targetType: 'org', targetId: ctx.orgId }, () =>
       assertCan(db, ctx, 'user:invite')
     );
     const now = nowIso();
-    const invites = sql(db, 'SELECT * FROM invites WHERE org_id = ? ORDER BY created_at DESC, id').all(params.org);
+    const invites = sql(db, 'SELECT * FROM invites WHERE org_id = ? ORDER BY created_at DESC, id').all(ctx.orgId);
     send(res, 200, { invites: invites.map((i) => inviteView(i, now)) });
   });
 
@@ -100,7 +100,7 @@ export function registerInviteRoutes(router, { db, secret }) {
           db,
           `UPDATE invites SET revoked_at = ?
             WHERE id = ? AND org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL`
-        ).run(nowIso(), params.id, params.org);
+        ).run(nowIso(), params.id, ctx.orgId);
         if (revoked.changes !== 1) throw notFound();
         auditAllow(db, ctx, meta);
       })();
