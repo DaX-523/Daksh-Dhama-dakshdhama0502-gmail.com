@@ -30,7 +30,7 @@ spelling. Then I would normalise both sides before comparing instead of rejectin
 
 **What I chose:** the org-level answer is "allowed anywhere in the org": allowed at the org scope
 (role baseline plus org-wide grants), or allowed on at least one device. An org-wide deny closes it
-everywhere (`server/permissions.js:79`).
+everywhere (`server/permissions.js:99`).
 
 **Why:** the Acme viewer can start a view session on lab-mac-01 only, through a device-scoped
 `session:start` grant, and "Start a session" in the Sessions card is gated by `session:start` with no
@@ -167,7 +167,7 @@ because the engine refuses devices outside the caller's org. After switching eve
 isolation then rests on one line, and one refactor away from a cross-tenant leak.
 
 **What would change my mind:** an endpoint that genuinely addresses two orgs. Transfer is the only one,
-and it looks the destination membership up explicitly (`server/routes/devices.js:159`).
+and it looks the destination membership up explicitly (`server/routes/devices.js:166`).
 
 ---
 
@@ -175,9 +175,9 @@ and it looks the destination membership up explicitly (`server/routes/devices.js
 
 **What I chose:** an allow grant on one device needs every permission it names allowed for the caller
 on that device. An org-wide allow grant needs it allowed at org scope and denied on no device
-(`acrossOrg`, `server/permissions.js:92`). Wildcards are expanded against the `permissions` table
+(`acrossOrg`, `server/permissions.js:112`). Wildcards are expanded against the `permissions` table
 before checking. Adding a device and creating an org-wide grant also need the permission at org scope,
-not on some device (`assertCanOrgScope`, `server/permissions.js:151`).
+not on some device (`assertCanOrgScope`, `server/permissions.js:171`).
 
 **Why:** tested live. A viewer holding `device:provision` on one device gets `403 scope_mismatch`
 granting it org-wide, and `403` adding a device. An admin with an org-wide deny on `device:terminal`
@@ -196,8 +196,8 @@ needs grants scoped to a set of devices, which the schema does not have.
 ### Deny grants follow the same rank rule as role changes, and nobody edits grants about themselves
 
 **What I chose:** creating a deny grant, or revoking an allow grant, needs the caller to outrank the
-person it applies to (`server/routes/devices.js:225`). Nobody can create or revoke a grant that
-applies to themselves (`:257`).
+person it applies to (`server/routes/devices.js:232`). Nobody can create or revoke a grant that
+applies to themselves (`:264`).
 
 **Why:** AUTH-DATA-MODEL.md §8 lists the checks for creating grants and rank is not among them, but a
 deny grant takes authority away exactly like a demotion does. Tested: an admin denying an owner's
@@ -229,6 +229,28 @@ dead session blocks the device until the timer runs.
 
 **What would change my mind:** a report of sessions expiring for an org nobody reads, for example to
 notify someone. Then a periodic sweep would earn its place.
+
+---
+
+### No permission cache: resolve on every request, and make one request cheap
+
+**What I chose:** no cache anywhere. Each request loads the membership, the role baseline and the
+live grants once (four indexed queries), then answers every permission from that. Org-wide grants
+are matched once per permission per request, and each device only looks at its own grants
+(`orgWideFor`, `server/permissions.js:77`).
+
+**Why:** measured on Acme grown to 1005 devices with 301 grants for Sam: his device list took a
+median 49.3 ms when every device re-scanned every org-wide grant, and 9.5 ms after, on the same data.
+Dana, with no grants, stays about 8 ms either way, which is mostly serialising 1.5 MB of rows.
+`/auth/me` is under 1 ms. The grants list also lost its query-per-grant.
+
+**What I rejected:** caching resolved sets by `(userId, orgId)` and invalidating on `perm_version`.
+The version does not change when a grant's `expires_at` or `starts_at` passes, so the cache would
+need a TTL, and inside that TTL it would serve a grant that has already expired. D7 says expiry takes
+effect on the next request.
+
+**What would change my mind:** resolution showing up in a profile at a size where the payload itself
+is not the problem. Then I would cache per request only, or key a cache on the next grant boundary.
 
 ---
 
@@ -270,14 +292,14 @@ permissions; `*` to all nineteen." The database has a twentieth permission (`dev
 copy). Built against the database: wildcards expand against the `permissions` table at request time
 (`server/permissions.js:40`).
 
-**Who writes login.** README.md:72 lists the routes to write as "orgs, members, invites, devices,
+**Who writes login.** README.md:88 lists the routes to write as "orgs, members, invites, devices,
 grants, sessions, audit", which leaves auth out, but no auth route exists and `check-api.js` fails
 its first request with 404. Built the auth routes in `server/routes/auth.js`.
 
 **A device you may not view: absent or forbidden?** UI-INVENTORY.md says a device the caller cannot
 `device:view` "is not listed at all", while PERMISSIONS.md §5 says "You can see it but lack the
 permission → `403`" and BRIEF.md §5.1 gates `GET /devices/{id}` on `device:view`. Built both as
-written: the list leaves the row out (`server/routes/devices.js:90`), and the detail route answers
+written: the list leaves the row out (`server/routes/devices.js:97`), and the detail route answers
 `403 explicit_deny`, because the device is in the caller's own org.
 
 **Stale section numbers.** `scripts/check-permissions.js:2` cites "PERMISSIONS.md §11 or §12", and
@@ -294,7 +316,10 @@ in §5. No behaviour depends on this; noted so nobody goes looking.
   as the brief says.
 - **Pagination and search for members, devices, grants and sessions.** Only the audit log pages
   (`limit` 1 to 500, `offset`), because it is the one list that grows without bound. The session
-  list returns the newest 200.
+  list returns the newest 200. The device list is the next one to page: at 1005 devices it is 1.5 MB,
+  because every row carries its full resolved set.
+- **Device transfer in the console.** `POST /devices/{id}/transfer` works and is tested, but the
+  inventory has no element for it, so the console does not offer it.
 - **Real device status.** `online` is a stored flag that `PATCH /devices/{id}` can set. Nothing
   connects to a device, by the "no real remote access" rule.
 

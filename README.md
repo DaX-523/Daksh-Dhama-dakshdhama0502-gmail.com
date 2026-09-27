@@ -2,6 +2,22 @@
 
 A multi-org permission console. One process, one port, one command.
 
+## Running this submission
+
+```sh
+npm install && npm run db:reset && npm run dev     # http://localhost:8080
+```
+
+Sign in as `sam@example.test` / `demo1234` and switch between Acme and Globex. Production mode is
+`npm run build && npm start`. The write-up is in `BUILD-LOG.md` and `DECISIONS.md`, and the specs
+this was built against are in `docs/`.
+
+All public suites pass: `check-jwt.js` 43, `check-permissions.js` 35, `check-api.js` 66,
+`npm run personalisation` 18, and `npx playwright test` 25 (run `npx vite build` and
+`npx playwright install chromium` first).
+
+---
+
 This file describes the repository you were given: how to run it, what is already done, what is
 yours to write, the guarantees the database already provides, and the attributes the console has
 to carry.
