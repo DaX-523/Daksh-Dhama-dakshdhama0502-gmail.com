@@ -77,8 +77,16 @@ const MIME = {
 };
 
 async function serveStatic(req, res, url) {
+  // A malformed escape would throw inside this async handler and take the whole process down.
+  let decoded;
+  try {
+    decoded = decodeURIComponent(url.pathname);
+  } catch {
+    return send(res, 400, { error: { code: 'VALIDATION', message: 'malformed URL', reason: null, requestId: null } });
+  }
+
   // normalize() collapses '..' so a crafted path cannot escape dist/.
-  const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
+  const rel = normalize(decoded).replace(/^(\.\.[/\\])+/, '');
   let file = join(DIST, rel);
 
   try {

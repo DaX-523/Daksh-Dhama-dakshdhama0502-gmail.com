@@ -27,7 +27,13 @@ export function createRouter() {
         const seg = r.segments[i];
         const param = PARAM.exec(seg);
         if (param) {
-          params[param[1]] = decodeURIComponent(parts[i]);
+          // A malformed escape like %E0%A4%A throws. Treat it as no match, not a server error.
+          try {
+            params[param[1]] = decodeURIComponent(parts[i]);
+          } catch {
+            ok = false;
+            break;
+          }
         } else if (seg !== parts[i]) {
           ok = false;
           break;
