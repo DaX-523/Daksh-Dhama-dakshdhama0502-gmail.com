@@ -111,8 +111,26 @@ for Acme explicitly gives 403 suspended.
 
 ## Phase 4 — devices and grants
 
-_What happens at the boundary where two grants disagree, or where a grant's scope and the
-question's scope differ? Say what you predicted and what you got._
+**2026-09-26**
+
+Wrote devices and grants. Then ran the experiment from phase 2: deleted the org check in
+`context.js`. check-api's cross-org test failed (got 200, want 404), so it tests isolation
+now. But calling the API by hand showed worse: an Acme token got Globex's members, audit log
+and grants, because the routes read the org from the URL. Changed every route to use the
+org from the token and repeated it: same requests now return Acme's own data, nothing from
+Globex. Put the check back.
+
+`device:*` includes `device:reboot`, which only exists in the database. An admin asking to
+hand out `device:*` gets 403 naming `device:reboot`, because admins don't hold it.
+
+A viewer with `device:provision` on one device can decommission that device, but can't add
+new devices or give provision to someone org-wide (403 scope_mismatch).
+
+A grant expiring at `2031-01-01T05:30:00+05:30` is stored as `2031-01-01T00:00:00.000Z`.
+Times are compared as text, so everything has to be stored the same way.
+
+Added a rule the docs don't have: a deny grant needs you to outrank the person, like a role
+change. Otherwise an admin could deny the owner things. Tested: 403.
 
 ## Phase 5 — sessions
 
