@@ -158,7 +158,29 @@ back, so it survives. check-api is 66/66.
 
 ## Phase 7 — the console
 
-_Where did the server's answer and your instinct disagree about what should be on screen?_
+**2026-09-27**
+
+Built the console. The UI suite passed 25/25 on the first run. Buttons on each device row
+come from that row's permissions in the device list, so when the test rewrites the
+server's answer to deny, the Control button disappears.
+
+Took screenshots to check it by eye. Globex looked blue even though its theme is amber.
+The screenshot was taken during the 0.2s colour fade. Waiting 0.6s showed amber. Also the
+row lines were broken because I'd made the table cell itself a flex box; wrapped the
+buttons in a div instead.
+
+Tested two refreshes with the same cookie at the same moment: one 200, one 401, and after
+that even the winner's new cookie was dead, so the person is signed out. That's the
+replay rule working. So the console shares one refresh request between everything on
+the page.
+
+Found while writing the client: the server spent the refresh cookie before checking the
+org it was asked for. Asking for an org you'd been removed from signed you out completely.
+Now it checks the org first.
+
+Sam in Acme: Terminal is missing on every row because of the org-wide deny, and the row's
+"unavailable" list says "someone denied it (grant grt_sam_deny_terminal_orgwide)", while
+Rename says "not part of your role, and nobody granted it".
 
 ## Phase 8 — hardening
 
