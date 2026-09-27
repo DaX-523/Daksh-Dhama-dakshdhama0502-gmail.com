@@ -184,10 +184,41 @@ Rename says "not part of your role, and nobody granted it".
 
 ## Phase 8 — hardening
 
-_What did you measure, what did you fix, and what did you deliberately leave alone? Anything you
-chose not to build belongs here with its reason._
+**2026-09-27**
+
+Ran it from a fresh clone: `npm install && npm run db:reset && npm run dev` works, and so
+does `npm run build && npm start`.
+
+Measured: grew Acme to 1005 devices and gave Sam 301 grants. His device list took 49.3 ms
+(median), because every device re-checked every org-wide grant. Now org-wide grants are
+checked once per request: 9.5 ms on the same data. Dana has no grants and takes about 8 ms
+either way; that's mostly turning 1.5 MB of rows into JSON. The grants list was also doing
+one query per grant; now it's one query.
+
+My first timing run gave Sam a 403 on the device list. My fake data had an org-wide deny on
+`device:*`, which also takes away `device:list`. The server was right; my test data wasn't.
+
+Found a crash: one request to `/%E0%A4%A` killed the production server. The file-serving
+code (given, not mine) called decodeURIComponent on a broken URL, and the next request found
+nothing listening. The API router gave a 500 for the same thing. Fixed both: 400/404 and
+the server stays up.
+
+Checked the "things that should always be true" list in PERMISSIONS.md: another org's
+device or session gives the exact same 404 as a missing one. Audit rows can't be edited even
+with raw SQL. Three identical invites sent at once: 201, 409, 409. Two accepts of one invite
+at once: 200 and 409, and only one user was created.
+
+A device hidden from someone by a device:view deny can still get a control session if they
+hold device:control. No permission implies another (D5), so I left it. A view session there
+is refused.
 
 ## Open threads
 
-_Things you know are wrong, unfinished, or that you would do differently with another day. Listing
-these honestly is worth more than pretending they do not exist — we will find them anyway._
+- Two tabs in the same browser refreshing at the same moment sign the person out: they share
+  the refresh cookie, and the second refresh looks like a stolen token. One tab is fine.
+- The "Add device" button follows the org-level answer ("allowed on any device"), but adding
+  a device needs device:provision across the org. Someone with provision on one device sees
+  the button and gets a 403 with the reason.
+- The device list isn't paginated: 1.5 MB at 1000 devices.
+- If the documents mean 401 (not 404) for switching to an org you're not in, that's a quick
+  change in `pickOrg`.
