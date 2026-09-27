@@ -135,17 +135,20 @@ owner, the active one could be demoted, and then nobody could run the org or rei
 
 **What I chose:** a refresh only proceeds if `UPDATE ... WHERE id = ? AND revoked_at IS NULL AND
 expires_at > ?` changed exactly one row. Presenting a token that was already rotated revokes its
-whole family (`server/routes/auth.js:116`).
+whole family (`server/routes/auth.js:129`). The org for the new access token is checked before the
+cookie is spent, so asking for an org you have since lost fails without signing you out.
 
 **Why:** tested live: reusing an old refresh cookie is 401, and it also kills the newest cookie from
-the same sign-in. This server runs handlers one at a time on one connection, so a read-then-update
-could not race today. The conditional update keeps that true if it ever runs as more than one process.
+the same sign-in. Sending two refreshes with one cookie at the same moment gives 200 and 401, and the
+winner's new cookie is dead afterwards: the whole sign-in is gone. That is the rule working, so the
+console shares one refresh request between every caller on the page (`web/api.js:42`).
 
-**What I rejected:** read the row, check `revoked_at`, then update. Two refreshes with the same cookie
-in two processes could both pass the check and both get new tokens.
+**What I rejected:** read the row, check `revoked_at`, then update. This server runs handlers one at a
+time on one connection, so it could not race today, but in two processes both refreshes could pass
+the check and both get new tokens.
 
-**What would change my mind:** users with several tabs being signed out by near-simultaneous
-refreshes. Then I would give the previous token a few seconds of grace.
+**What would change my mind:** users with several tabs being signed out, since tabs share the cookie
+but not the page. Then I would give the previous token a few seconds of grace.
 
 ---
 
@@ -229,6 +232,28 @@ notify someone. Then a periodic sweep would earn its place.
 
 ---
 
+### A locked action is absent, and the row says why in the server's words
+
+**What I chose:** every gated element goes through one component, `Gated` (`web/ui.jsx:6`), which
+renders the element with `data-permission` and `data-state="unlocked"` or renders nothing. Each
+device row also has a collapsed "unavailable" list built from the same answers (`Locks`,
+`web/views/Devices.jsx:33`), which tells "not part of your role, and nobody granted it" (`implicit`)
+apart from "someone denied it (grant ...)" (`explicit_deny`) (`lockReason`, `web/ui.jsx:32`).
+
+**Why:** the presence rule leaves a person with no way to ask why Terminal is missing on one row. The
+server already sends `reason` and `source`, so the explanation costs nothing and cannot disagree with
+the buttons. All 25 UI tests pass, including the one that rewrites the server's answer to deny and
+expects the button to disappear.
+
+**What I rejected:** a disabled button with a tooltip, which the inventory forbids and which
+advertises actions a person cannot take. Also rejected: an explanation that repeats the element with
+`data-permission`, which the tests would count as the element being present.
+
+**What would change my mind:** people finding the list noisy on large fleets. Then it would move into
+a device detail view.
+
+---
+
 ## Where this repo argues with itself
 
 **Not a member: 401 or 404?** PERMISSIONS.md:177 says "Not a member, or no valid credentials → `401
@@ -276,8 +301,9 @@ in §5. No behaviour depends on this; noted so nobody goes looking.
 ## Tools and sources
 
 - **Claude (Anthropic), used through Claude Code**, for the whole build: reading the specs and tests,
-  writing the server code, running the test suites and live smoke tests, and drafting this file and
-  the BUILD-LOG entries from what we ran. I reviewed each change and committed it myself.
+  writing the server and console code, running the test suites, live smoke tests and screenshots,
+  and drafting this file and the BUILD-LOG entries from what we ran. I reviewed each change and
+  committed it myself.
 - **Libraries:** only what the starter shipped with (better-sqlite3, React, Vite, Playwright). Tokens
   and password hashing use `node:crypto`. Nothing was added.
 - No blog posts or other candidates' repositories were used. `q1-starter/`, the reference
