@@ -134,12 +134,27 @@ change. Otherwise an admin could deny the owner things. Tested: 403.
 
 ## Phase 5 — sessions
 
-_Two permissions, one device. What did you have to resolve, and in what order, to keep the two
-failure reasons distinguishable?_
+**2026-09-26**
+
+Sent two exclusive session requests for the same device at the same moment: one 201, one
+409 DEVICE_BUSY naming the other session. The database index decides, not my code.
+
+Moved a session's expiry into the past: reading it back gives ended / session_expired, and
+the device takes a new exclusive session straight away. Expiry is checked when sessions are
+read, no background timer.
+
+A refused start says which check failed: `missing_permission` (no session:start) or
+`missing_device_permission` (no permission for that mode on that device).
 
 ## Phase 6 — audit
 
-_What did you decide counts as an auditable event, and what pushed you to that line?_
+**2026-09-26**
+
+What gets an audit row: every change that succeeds (written in the same transaction as the
+change) and every refusal (any 403, and the last-owner block) as a "deny" row with its
+reason. Not audited: successful reads, 400s, 404s, and sign-ins (a sign-in has no org, and
+the audit table needs one). The deny row is written after the failed change is rolled
+back, so it survives. check-api is 66/66.
 
 ## Phase 7 — the console
 
