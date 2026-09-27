@@ -92,8 +92,8 @@ export function signIn(db, secret, res, userId, orgId) {
 export function registerAuthRoutes(router, { db, secret }) {
   router.post('/v1/auth/login', (ctx, _params, res) => {
     const { email, password, orgId } = ctx.body;
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      throw badRequest('email and password are required');
+    if (typeof email !== 'string' || typeof password !== 'string' || email.trim() === '' || password === '') {
+      throw badRequest('enter your email and password', 'missing_credentials');
     }
     const found = sql(db, 'SELECT id, password_hash FROM users WHERE email = ?').get(email.trim().toLowerCase());
     const passwordOk = verifyPassword(password, found?.password_hash ?? DUMMY_HASH);
@@ -110,20 +110,28 @@ export function registerAuthRoutes(router, { db, secret }) {
     const now = nowIso();
     const revokeFamily = sql(db, 'UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL');
 
-    const rotated = db.transaction(() => {
-      if (!row) return false;
-      const rotate = sql(db, 'UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL AND expires_at > ?');
-      if (rotate.run(now, row.id, now).changes === 1) return true;
-      if (row.expires_at > now) revokeFamily.run(now, row.family_id);
-      return false;
-    })();
-
-    if (!rotated) {
+    const refuse = () => {
       clearRefreshCookie(res);
-      throw unauthenticated('refresh token is not valid');
+      return unauthenticated('refresh token is not valid');
+    };
+    if (!row) throw refuse();
+    if (row.revoked_at || row.expires_at <= now) {
+      if (row.revoked_at && row.expires_at > now) revokeFamily.run(now, row.family_id);
+      throw refuse();
     }
 
+    // Built before rotating, so asking for an org you no longer belong to fails without
+    // spending the cookie, and the client can retry without an org.
     const body = sessionFor(db, secret, row.user_id, ctx.body.orgId);
+
+    const rotated = db.transaction(() => {
+      const rotate = sql(db, 'UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL AND expires_at > ?');
+      if (rotate.run(now, row.id, now).changes === 1) return true;
+      revokeFamily.run(now, row.family_id);
+      return false;
+    })();
+    if (!rotated) throw refuse();
+
     startRefreshFamily(db, res, row.user_id, row.family_id);
     send(res, 200, body);
   });

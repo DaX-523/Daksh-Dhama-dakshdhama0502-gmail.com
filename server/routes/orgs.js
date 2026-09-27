@@ -3,7 +3,7 @@ import { send, badRequest, conflict, notFound, forbidden, selfRoleChange } from 
 import { assertCan, resolve } from '../permissions.js';
 import { audit, auditDenials, auditAllow } from '../audit.js';
 import {
-  OWNER, assertRoleExists, assertCanModify, assertCanAssign, assertNotLastOwner, endActiveSessions,
+  OWNER, roleRanks, canAssign, assertRoleExists, assertCanModify, assertCanAssign, assertNotLastOwner, endActiveSessions,
 } from '../lifecycle.js';
 import { requireName, requireInt } from '../validate.js';
 
@@ -130,6 +130,14 @@ export function registerOrgRoutes(router, { db }) {
       })();
     });
     send(res, 204);
+  });
+
+  // The roles in this org's catalogue, and which of them the caller may hand out. The console
+  // builds its role pickers from this instead of knowing any rank rule itself.
+  router.get('/v1/orgs/:org/roles', (ctx, _params, res) => {
+    const ranks = roleRanks(db);
+    const roles = sql(db, 'SELECT key, label FROM roles ORDER BY rank DESC').all();
+    send(res, 200, { roles: roles.map((r) => ({ ...r, assignable: canAssign(db, ctx.role, r.key, ranks) })) });
   });
 
   router.get('/v1/orgs/:org/members', (ctx, params, res) => {

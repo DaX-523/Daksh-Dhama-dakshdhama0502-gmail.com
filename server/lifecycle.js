@@ -21,12 +21,12 @@ export function assertCanModify(db, callerRole, targetRole) {
   }
 }
 
+export function canAssign(db, callerRole, newRole, ranks = roleRanks(db)) {
+  return callerRole === OWNER || ranks.get(newRole) < ranks.get(callerRole);
+}
+
 export function assertCanAssign(db, callerRole, newRole) {
-  if (callerRole === OWNER) return;
-  const ranks = roleRanks(db);
-  if (!(ranks.get(newRole) < ranks.get(callerRole))) {
-    throw forbidden(`you cannot assign the ${newRole} role`, 'insufficient_rank');
-  }
+  if (!canAssign(db, callerRole, newRole)) throw forbidden(`you cannot assign the ${newRole} role`, 'insufficient_rank');
 }
 
 // Counts active owners. A suspended owner cannot run the org, so they do not count.
