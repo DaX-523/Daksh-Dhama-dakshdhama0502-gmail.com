@@ -114,7 +114,8 @@ async function serveStatic(req, res, url) {
 let vite = null;
 if (DEV) {
   const { createServer } = await import('vite');
-  vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
+  const { default: config } = await import('../vite.config.js');
+  vite = await createServer({ ...config, configFile: false, server: { middlewareMode: true }, appType: 'spa' });
   console.log('vite middleware attached (HMR enabled)');
 }
 
