@@ -146,6 +146,21 @@ export function assertCan(db, ctx, permission, deviceId = null) {
   return result;
 }
 
+// For actions that name no device and must not ride on a device-scoped grant, such as adding a
+// device or creating an org-wide grant: the role baseline and org-wide grants only.
+export function assertCanOrgScope(db, ctx, permission) {
+  const inputs = load(db, ctx.userId, ctx.orgId, new Date());
+  const result = inputs.blocked ? deny(null, inputs.blocked) : atDevice(inputs, permission, null);
+  if (result.effect !== 'allow') throw refusal(permission, result);
+  return result;
+}
+
+// Checks an answer the caller already resolved, so a list endpoint resolves once per request.
+export function assertAllowed(permission, result) {
+  if (result?.effect !== 'allow') throw refusal(permission, result ?? deny(null, 'implicit'));
+  return result;
+}
+
 export function assertMayGrant(db, ctx, patterns, deviceId = null) {
   const inputs = load(db, ctx.userId, ctx.orgId, new Date());
   if (inputs.blocked) throw refusal('grant:create', deny(null, inputs.blocked));
