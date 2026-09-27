@@ -53,24 +53,44 @@ function load(db, userId, orgId, now) {
   }
 
   const at = now.toISOString();
+  const grants = s.grants.all(userId, orgId, at, at);
+  const byDevice = new Map();
+  for (const g of grants) {
+    if (g.deviceId !== null) byDevice.set(g.deviceId, [...(byDevice.get(g.deviceId) ?? []), g]);
+  }
   return {
     catalogue,
     role: membership.role,
     blocked: null,
     baseline: new Set(s.baseline.all(membership.role).map((r) => r.permission)),
-    grants: s.grants.all(userId, orgId, at, at),
+    grants,
+    orgWide: grants.filter((g) => g.deviceId === null),
+    byDevice,
+    orgWideMemo: new Map(),
   };
+}
+
+const firstMatch = (grants, key, effect) => grants.find((g) => g.effect === effect && covers(g.pattern, key));
+
+// The org-wide grants give the same answer on every device, so they are matched once per
+// permission per request instead of once per device.
+function orgWideFor(inputs, key) {
+  let hit = inputs.orgWideMemo.get(key);
+  if (!hit) {
+    hit = { deny: firstMatch(inputs.orgWide, key, 'deny'), allow: firstMatch(inputs.orgWide, key, 'allow') };
+    inputs.orgWideMemo.set(key, hit);
+  }
+  return hit;
 }
 
 // deviceId null evaluates the org scope: the role baseline plus org-wide grants only.
 function atDevice(inputs, key, deviceId) {
-  const applicable = inputs.grants.filter(
-    (g) => (g.deviceId === null || g.deviceId === deviceId) && covers(g.pattern, key)
-  );
-  const denied = applicable.find((g) => g.effect === 'deny');
+  const org = orgWideFor(inputs, key);
+  const scoped = deviceId === null ? [] : inputs.byDevice.get(deviceId) ?? [];
+  const denied = org.deny ?? firstMatch(scoped, key, 'deny');
   if (denied) return deny(`grant:${denied.id}`, 'explicit_deny');
   if (inputs.baseline.has(key)) return allow(`role:${inputs.role}`);
-  const granted = applicable.find((g) => g.effect === 'allow');
+  const granted = org.allow ?? firstMatch(scoped, key, 'allow');
   return granted ? allow(`grant:${granted.id}`) : deny(null, 'implicit');
 }
 

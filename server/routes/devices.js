@@ -46,14 +46,21 @@ function grantStatus(g, now) {
   return 'active';
 }
 
+// One query for every listed grant's permissions, not one per grant.
 function grantsWithPermissions(db, rows) {
   const now = nowIso();
+  const byGrant = new Map(rows.map((g) => [g.id, []]));
+  const permissions = sql(
+    db,
+    `SELECT grant_id, permission FROM grant_permissions
+      WHERE grant_id IN (SELECT value FROM json_each(?)) ORDER BY permission`
+  ).all(JSON.stringify(rows.map((g) => g.id)));
+  for (const p of permissions) byGrant.get(p.grant_id).push(p.permission);
+
   return rows.map((g) => ({
     id: g.id, user_id: g.user_id, user_name: g.user_name, device_id: g.device_id, device_name: g.device_name,
     effect: g.effect, starts_at: g.starts_at, expires_at: g.expires_at, created_by: g.created_by,
-    created_at: g.created_at, status: grantStatus(g, now),
-    permissions: sql(db, 'SELECT permission FROM grant_permissions WHERE grant_id = ? ORDER BY permission')
-      .all(g.id).map((r) => r.permission),
+    created_at: g.created_at, status: grantStatus(g, now), permissions: byGrant.get(g.id),
   }));
 }
 
